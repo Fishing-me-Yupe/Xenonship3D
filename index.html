@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+      [heart, "心臓", "pink"],
+      [waist, "腰", "yellow"],
+
+      [rightHip, "右足付け根", "lime"],
+      [rightKnee, "右膝", "lime"],
+      [rightAnkle, "右足首", "lime"],
+      [rightFoot, "右足先", "lime"],
+
+      [leftHip, "左足付け根", "magenta"],
+      [leftKnee, "左膝", "magenta"],
+      [leftAnkle, "左足首", "magenta"],
+      [leftFoot, "左足先", "magenta"]
+    ];
+
+    for (const p of points) {
+      drawPoint(p[0].x, p[0].y, p[2], p[1]);
+    }
+
+    let html = "";
+
+    for (const p of points) {
+      html += `
+      <div>
+      ${p[1]} :
+      X=${Math.round(p[0].x)}
+      Y=${Math.round(p[0].y)}
+      Z=${p[0].z.toFixed(2)}
+      </div>
+      `;
+    }
+
+    html += `<hr>`;
+
+    html += `顔の傾き: ${faceTilt.toFixed(1)}°<br>`;
+    html += `体の向き: ${bodyRotation.toFixed(1)}°<br>`;
+
+    if (
+      bodyRotation < 45 ||
+      bodyRotation > 315
+    ) {
+      html += `向き: 前`;
+    }
+    else if (
+      bodyRotation >= 45 &&
+      bodyRotation < 135
+    ) {
+      html += `向き: 右`;
+    }
+    else if (
+      bodyRotation >= 135 &&
+      bodyRotation < 225
+    ) {
+      html += `向き: 後ろ`;
+    }
+    else {
+      html += `向き: 左`;
+    }
+
+    info.innerHTML = html;
+  }
+
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener("resize", () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+
+</script>
+
+</body>
+</html>
