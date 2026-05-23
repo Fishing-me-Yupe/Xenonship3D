@@ -1,4 +1,320 @@
 <!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Full Body Tracker</title>
+
+<style>
+body {
+  margin: 0;
+  overflow: hidden;
+  background: black;
+  font-family: sans-serif;
+}
+
+video {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+#info {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  color: white;
+  background: rgba(0,0,0,0.5);
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 14px;
+  max-height: 95vh;
+  overflow-y: auto;
+  width: 320px;
+}
+</style>
+</head>
+<body>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+<div id="info"></div>
+
+<script type="module">
+
+import {
+  PoseLandmarker,
+  FilesetResolver
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const info = document.getElementById("info");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const vision = await FilesetResolver.forVisionTasks(
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+);
+
+const poseLandmarker =
+await PoseLandmarker.createFromOptions(
+  vision,
+  {
+    baseOptions: {
+      modelAssetPath:
+      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
+    },
+    runningMode: "VIDEO",
+    numPoses: 1
+  }
+);
+
+navigator.mediaDevices.getUserMedia({
+  video: true
+}).then(stream => {
+  video.srcObject = stream;
+});
+
+const LANDMARKS = {
+
+  face: 0,
+
+  leftShoulder: 11,
+  rightShoulder: 12,
+
+  leftElbow: 13,
+  rightElbow: 14,
+
+  leftHand: 15,
+  rightHand: 16,
+
+  leftHip: 23,
+  rightHip: 24,
+
+  leftKnee: 25,
+  rightKnee: 26,
+
+  leftAnkle: 27,
+  rightAnkle: 28,
+
+  leftFoot: 31,
+  rightFoot: 32
+};
+
+function drawPoint(x, y, color, label) {
+
+  ctx.beginPath();
+  ctx.arc(x, y, 8, 0, Math.PI * 2);
+
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  ctx.fillStyle = "white";
+  ctx.font = "16px sans-serif";
+  ctx.fillText(label, x + 10, y);
+}
+
+function getMid(a, b) {
+
+  return {
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+    z: (a.z + b.z) / 2
+  };
+}
+
+function radToDeg(rad) {
+  return rad * 180 / Math.PI;
+}
+
+function normalizeAngle(angle) {
+
+  angle %= 360;
+
+  if (angle < 0) {
+    angle += 360;
+  }
+
+  return angle;
+}
+
+function getBodyRotation(leftShoulder, rightShoulder) {
+
+  const dx =
+    rightShoulder.x - leftShoulder.x;
+
+  const dz =
+    rightShoulder.z - leftShoulder.z;
+
+  let angle =
+    Math.atan2(dz, dx);
+
+  angle = radToDeg(angle);
+
+  angle += 90;
+
+  return normalizeAngle(angle);
+}
+
+function getFaceTilt(
+  leftShoulder,
+  rightShoulder
+) {
+
+  const dx =
+    rightShoulder.x - leftShoulder.x;
+
+  const dy =
+    rightShoulder.y - leftShoulder.y;
+
+  return normalizeAngle(
+    radToDeg(
+      Math.atan2(dy, dx)
+    )
+  );
+}
+
+video.addEventListener(
+  "loadeddata",
+  () => {
+    requestAnimationFrame(loop);
+  }
+);
+
+function loop() {
+
+  ctx.clearRect(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  const results =
+    poseLandmarker.detectForVideo(
+      video,
+      performance.now()
+    );
+
+  if (results.landmarks.length > 0) {
+
+    const lm =
+      results.landmarks[0];
+
+    function getPoint(index) {
+
+      return {
+
+        x:
+          (1 - lm[index].x)
+          * canvas.width,
+
+        y:
+          lm[index].y
+          * canvas.height,
+
+        z:
+          lm[index].z
+      };
+    }
+
+    const face =
+      getPoint(LANDMARKS.face);
+
+    const leftShoulder =
+      getPoint(LANDMARKS.leftShoulder);
+
+    const rightShoulder =
+      getPoint(LANDMARKS.rightShoulder);
+
+    const leftElbow =
+      getPoint(LANDMARKS.leftElbow);
+
+    const rightElbow =
+      getPoint(LANDMARKS.rightElbow);
+
+    const leftHand =
+      getPoint(LANDMARKS.leftHand);
+
+    const rightHand =
+      getPoint(LANDMARKS.rightHand);
+
+    const leftHip =
+      getPoint(LANDMARKS.leftHip);
+
+    const rightHip =
+      getPoint(LANDMARKS.rightHip);
+
+    const leftKnee =
+      getPoint(LANDMARKS.leftKnee);
+
+    const rightKnee =
+      getPoint(LANDMARKS.rightKnee);
+
+    const leftAnkle =
+      getPoint(LANDMARKS.leftAnkle);
+
+    const rightAnkle =
+      getPoint(LANDMARKS.rightAnkle);
+
+    const leftFoot =
+      getPoint(LANDMARKS.leftFoot);
+
+    const rightFoot =
+      getPoint(LANDMARKS.rightFoot);
+
+    const heart =
+      getMid(
+        leftShoulder,
+        rightShoulder
+      );
+
+    const waist =
+      getMid(
+        leftHip,
+        rightHip
+      );
+
+    const bodyRotation =
+      getBodyRotation(
+        leftShoulder,
+        rightShoulder
+      );
+
+    const faceTilt =
+      getFaceTilt(
+        leftShoulder,
+        rightShoulder
+      );
+
+    const points = [
+
+      [face, "顔", "red"],
+
+      [rightShoulder, "右肩", "orange"],
+      [rightElbow, "右肘", "orange"],
+      [rightHand, "右手", "orange"],
+
+      [leftShoulder, "左肩", "cyan"],
+      [leftElbow, "左肘", "cyan"],
+      [leftHand, "左手", "cyan"],
+
       [heart, "心臓", "pink"],
       [waist, "腰", "yellow"],
 
@@ -14,47 +330,73 @@
     ];
 
     for (const p of points) {
-      drawPoint(p[0].x, p[0].y, p[2], p[1]);
+
+      drawPoint(
+        p[0].x,
+        p[0].y,
+        p[2],
+        p[1]
+      );
     }
 
     let html = "";
 
     for (const p of points) {
-      html += `
-      <div>
-      ${p[1]} :
-      X=${Math.round(p[0].x)}
-      Y=${Math.round(p[0].y)}
-      Z=${p[0].z.toFixed(2)}
-      </div>
-      `;
+
+      html += "<div>"
+      + p[1]
+      + " : "
+      + "X="
+      + Math.round(p[0].x)
+      + " "
+      + "Y="
+      + Math.round(p[0].y)
+      + " "
+      + "Z="
+      + p[0].z.toFixed(2)
+      + "</div>";
     }
 
-    html += `<hr>`;
+    html += "<hr>";
 
-    html += `顔の傾き: ${faceTilt.toFixed(1)}°<br>`;
-    html += `体の向き: ${bodyRotation.toFixed(1)}°<br>`;
+    html +=
+      "顔の傾き: "
+      + faceTilt.toFixed(1)
+      + "°<br>";
+
+    html +=
+      "体の向き: "
+      + bodyRotation.toFixed(1)
+      + "°<br>";
 
     if (
       bodyRotation < 45 ||
       bodyRotation > 315
     ) {
-      html += `向き: 前`;
-    }
-    else if (
+
+      html += "向き: 前";
+
+    } else if (
+
       bodyRotation >= 45 &&
       bodyRotation < 135
+
     ) {
-      html += `向き: 右`;
-    }
-    else if (
+
+      html += "向き: 右";
+
+    } else if (
+
       bodyRotation >= 135 &&
       bodyRotation < 225
+
     ) {
-      html += `向き: 後ろ`;
-    }
-    else {
-      html += `向き: 左`;
+
+      html += "向き: 後ろ";
+
+    } else {
+
+      html += "向き: 左";
     }
 
     info.innerHTML = html;
@@ -63,10 +405,17 @@
   requestAnimationFrame(loop);
 }
 
-window.addEventListener("resize", () => {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-});
+window.addEventListener(
+  "resize",
+  () => {
+
+    canvas.width =
+      window.innerWidth;
+
+    canvas.height =
+      window.innerHeight;
+  }
+);
 
 </script>
 
