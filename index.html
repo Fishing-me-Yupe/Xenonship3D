@@ -3,48 +3,55 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Full Body Tracker</title>
+<title>Full Body Tracker Stable</title>
 
 <style>
-body {
-  margin: 0;
-  overflow: hidden;
-  background: black;
-  font-family: sans-serif;
+
+body{
+  margin:0;
+  overflow:hidden;
+  background:black;
+  font-family:sans-serif;
 }
 
-video {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100vw;
-  height: 100vh;
-  object-fit: cover;
-  transform: scaleX(-1);
+video{
+  position:absolute;
+  left:0;
+  top:0;
+  width:100vw;
+  height:100vh;
+  object-fit:cover;
+  transform:scaleX(-1);
 }
 
-canvas {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100vw;
-  height: 100vh;
-  pointer-events: none;
+canvas{
+  position:absolute;
+  left:0;
+  top:0;
+  width:100vw;
+  height:100vh;
+  pointer-events:none;
 }
 
-#info {
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  color: white;
-  background: rgba(0,0,0,0.5);
-  padding: 10px;
-  border-radius: 10px;
-  font-size: 14px;
-  max-height: 95vh;
-  overflow-y: auto;
-  width: 320px;
+#info{
+  position:absolute;
+  left:10px;
+  top:10px;
+
+  color:white;
+  background:rgba(0,0,0,0.5);
+
+  padding:10px;
+  border-radius:10px;
+
+  font-size:14px;
+
+  width:320px;
+  max-height:95vh;
+
+  overflow-y:auto;
 }
+
 </style>
 </head>
 <body>
@@ -58,146 +65,257 @@ canvas {
 import {
   PoseLandmarker,
   FilesetResolver
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+}
+from
+"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
 
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const info = document.getElementById("info");
+const video =
+document.getElementById("video");
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+const canvas =
+document.getElementById("canvas");
 
-const vision = await FilesetResolver.forVisionTasks(
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+const ctx =
+canvas.getContext("2d");
+
+const info =
+document.getElementById("info");
+
+canvas.width =
+window.innerWidth;
+
+canvas.height =
+window.innerHeight;
+
+const vision =
+await FilesetResolver.forVisionTasks(
+"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
 );
 
 const poseLandmarker =
 await PoseLandmarker.createFromOptions(
-  vision,
-  {
-    baseOptions: {
-      modelAssetPath:
-      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
-    },
-    runningMode: "VIDEO",
-    numPoses: 1
-  }
+vision,
+{
+  baseOptions:{
+    modelAssetPath:
+    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
+  },
+
+  runningMode:"VIDEO",
+
+  numPoses:1
+}
 );
 
 navigator.mediaDevices.getUserMedia({
-  video: true
-}).then(stream => {
+  video:true
+})
+.then(stream=>{
   video.srcObject = stream;
 });
 
 const LANDMARKS = {
 
-  face: 0,
+  face:0,
 
-  leftShoulder: 11,
-  rightShoulder: 12,
+  leftShoulder:11,
+  rightShoulder:12,
 
-  leftElbow: 13,
-  rightElbow: 14,
+  leftElbow:13,
+  rightElbow:14,
 
-  leftHand: 15,
-  rightHand: 16,
+  leftHand:15,
+  rightHand:16,
 
-  leftHip: 23,
-  rightHip: 24,
+  leftHip:23,
+  rightHip:24,
 
-  leftKnee: 25,
-  rightKnee: 26,
+  leftKnee:25,
+  rightKnee:26,
 
-  leftAnkle: 27,
-  rightAnkle: 28,
+  leftAnkle:27,
+  rightAnkle:28,
 
-  leftFoot: 31,
-  rightFoot: 32
+  leftFoot:31,
+  rightFoot:32
 };
 
-function drawPoint(x, y, color, label) {
+function drawPoint(
+  x,
+  y,
+  color,
+  label
+){
 
   ctx.beginPath();
-  ctx.arc(x, y, 8, 0, Math.PI * 2);
+
+  ctx.arc(
+    x,
+    y,
+    8,
+    0,
+    Math.PI*2
+  );
 
   ctx.fillStyle = color;
   ctx.fill();
 
   ctx.fillStyle = "white";
-  ctx.font = "16px sans-serif";
-  ctx.fillText(label, x + 10, y);
+
+  ctx.font =
+  "16px sans-serif";
+
+  ctx.fillText(
+    label,
+    x + 10,
+    y
+  );
 }
 
-function getMid(a, b) {
+function getMid(a,b){
 
-  return {
-    x: (a.x + b.x) / 2,
-    y: (a.y + b.y) / 2,
-    z: (a.z + b.z) / 2
+  return{
+
+    x:(a.x+b.x)/2,
+    y:(a.y+b.y)/2,
+    z:(a.z+b.z)/2
   };
 }
 
-function radToDeg(rad) {
+function radToDeg(rad){
   return rad * 180 / Math.PI;
 }
 
-function normalizeAngle(angle) {
+function normalizeAngle(angle){
 
   angle %= 360;
 
-  if (angle < 0) {
+  if(angle < 0){
     angle += 360;
   }
 
   return angle;
 }
 
-function getBodyRotation(leftShoulder, rightShoulder) {
+function lerp(a,b,t){
+  return a + (b-a)*t;
+}
+
+/* =========================
+   ブレ軽減用
+========================= */
+
+const smoothPoints = {};
+let smoothRotation = 0;
+let smoothTilt = 0;
+
+function smoothPoint(name,newPoint){
+
+  if(!smoothPoints[name]){
+
+    smoothPoints[name] = {
+      x:newPoint.x,
+      y:newPoint.y,
+      z:newPoint.z
+    };
+  }
+
+  smoothPoints[name].x =
+  lerp(
+    smoothPoints[name].x,
+    newPoint.x,
+    0.35
+  );
+
+  smoothPoints[name].y =
+  lerp(
+    smoothPoints[name].y,
+    newPoint.y,
+    0.35
+  );
+
+  smoothPoints[name].z =
+  lerp(
+    smoothPoints[name].z,
+    newPoint.z,
+    0.35
+  );
+
+  return smoothPoints[name];
+}
+
+/* =========================
+   向き検知
+========================= */
+
+function getBodyRotation(
+  leftShoulder,
+  rightShoulder
+){
 
   const dx =
-    rightShoulder.x - leftShoulder.x;
+  rightShoulder.x
+  - leftShoulder.x;
 
-  const dz =
-    rightShoulder.z - leftShoulder.z;
+  const width =
+  Math.abs(dx);
+
+  const MAX_WIDTH = 300;
+
+  let ratio =
+  width / MAX_WIDTH;
+
+  ratio =
+  Math.max(
+    0,
+    Math.min(1,ratio)
+  );
 
   let angle =
-    Math.atan2(dz, dx);
+  Math.acos(ratio);
 
-  angle = radToDeg(angle);
+  angle =
+  radToDeg(angle);
 
-  angle += 90;
+  if(dx < 0){
+    angle = 360 - angle;
+  }
 
   return normalizeAngle(angle);
 }
 
+/* =========================
+   顔傾き
+========================= */
+
 function getFaceTilt(
   leftShoulder,
   rightShoulder
-) {
+){
 
   const dx =
-    rightShoulder.x - leftShoulder.x;
+  rightShoulder.x
+  - leftShoulder.x;
 
   const dy =
-    rightShoulder.y - leftShoulder.y;
+  rightShoulder.y
+  - leftShoulder.y;
 
   return normalizeAngle(
     radToDeg(
-      Math.atan2(dy, dx)
+      Math.atan2(dy,dx)
     )
   );
 }
 
 video.addEventListener(
-  "loadeddata",
-  () => {
-    requestAnimationFrame(loop);
-  }
+"loadeddata",
+()=>{
+  requestAnimationFrame(loop);
+}
 );
 
-function loop() {
+function loop(){
 
   ctx.clearRect(
     0,
@@ -207,129 +325,214 @@ function loop() {
   );
 
   const results =
-    poseLandmarker.detectForVideo(
-      video,
-      performance.now()
-    );
+  poseLandmarker.detectForVideo(
+    video,
+    performance.now()
+  );
 
-  if (results.landmarks.length > 0) {
+  if(results.landmarks.length > 0){
 
     const lm =
-      results.landmarks[0];
+    results.landmarks[0];
 
-    function getPoint(index) {
+    function getPoint(index){
 
-      return {
+      return{
 
         x:
-          (1 - lm[index].x)
-          * canvas.width,
+        (1-lm[index].x)
+        * canvas.width,
 
         y:
-          lm[index].y
-          * canvas.height,
+        lm[index].y
+        * canvas.height,
 
         z:
-          lm[index].z
+        lm[index].z
       };
     }
 
     const face =
-      getPoint(LANDMARKS.face);
+    smoothPoint(
+      "face",
+      getPoint(LANDMARKS.face)
+    );
 
     const leftShoulder =
-      getPoint(LANDMARKS.leftShoulder);
+    smoothPoint(
+      "leftShoulder",
+      getPoint(LANDMARKS.leftShoulder)
+    );
 
     const rightShoulder =
-      getPoint(LANDMARKS.rightShoulder);
+    smoothPoint(
+      "rightShoulder",
+      getPoint(LANDMARKS.rightShoulder)
+    );
 
     const leftElbow =
-      getPoint(LANDMARKS.leftElbow);
+    smoothPoint(
+      "leftElbow",
+      getPoint(LANDMARKS.leftElbow)
+    );
 
     const rightElbow =
-      getPoint(LANDMARKS.rightElbow);
+    smoothPoint(
+      "rightElbow",
+      getPoint(LANDMARKS.rightElbow)
+    );
 
     const leftHand =
-      getPoint(LANDMARKS.leftHand);
+    smoothPoint(
+      "leftHand",
+      getPoint(LANDMARKS.leftHand)
+    );
 
     const rightHand =
-      getPoint(LANDMARKS.rightHand);
+    smoothPoint(
+      "rightHand",
+      getPoint(LANDMARKS.rightHand)
+    );
 
     const leftHip =
-      getPoint(LANDMARKS.leftHip);
+    smoothPoint(
+      "leftHip",
+      getPoint(LANDMARKS.leftHip)
+    );
 
     const rightHip =
-      getPoint(LANDMARKS.rightHip);
+    smoothPoint(
+      "rightHip",
+      getPoint(LANDMARKS.rightHip)
+    );
 
     const leftKnee =
-      getPoint(LANDMARKS.leftKnee);
+    smoothPoint(
+      "leftKnee",
+      getPoint(LANDMARKS.leftKnee)
+    );
 
     const rightKnee =
-      getPoint(LANDMARKS.rightKnee);
+    smoothPoint(
+      "rightKnee",
+      getPoint(LANDMARKS.rightKnee)
+    );
 
     const leftAnkle =
-      getPoint(LANDMARKS.leftAnkle);
+    smoothPoint(
+      "leftAnkle",
+      getPoint(LANDMARKS.leftAnkle)
+    );
 
     const rightAnkle =
-      getPoint(LANDMARKS.rightAnkle);
+    smoothPoint(
+      "rightAnkle",
+      getPoint(LANDMARKS.rightAnkle)
+    );
 
     const leftFoot =
-      getPoint(LANDMARKS.leftFoot);
+    smoothPoint(
+      "leftFoot",
+      getPoint(LANDMARKS.leftFoot)
+    );
 
     const rightFoot =
-      getPoint(LANDMARKS.rightFoot);
+    smoothPoint(
+      "rightFoot",
+      getPoint(LANDMARKS.rightFoot)
+    );
+
+    /* =========================
+       追加ポイント
+    ========================= */
 
     const heart =
-      getMid(
-        leftShoulder,
-        rightShoulder
-      );
+    getMid(
+      leftShoulder,
+      rightShoulder
+    );
 
     const waist =
-      getMid(
-        leftHip,
-        rightHip
-      );
+    getMid(
+      leftHip,
+      rightHip
+    );
 
-    const bodyRotation =
-      getBodyRotation(
-        leftShoulder,
-        rightShoulder
-      );
+    const belly = {
 
-    const faceTilt =
-      getFaceTilt(
-        leftShoulder,
-        rightShoulder
-      );
+      x:(heart.x + waist.x)/2,
+      y:(heart.y + waist.y)/2,
+      z:(heart.z + waist.z)/2
+    };
+
+    /* =========================
+       向き
+    ========================= */
+
+    let bodyRotation =
+    getBodyRotation(
+      leftShoulder,
+      rightShoulder
+    );
+
+    smoothRotation =
+    lerp(
+      smoothRotation,
+      bodyRotation,
+      0.15
+    );
+
+    bodyRotation =
+    smoothRotation;
+
+    /* =========================
+       顔傾き
+    ========================= */
+
+    let faceTilt =
+    getFaceTilt(
+      leftShoulder,
+      rightShoulder
+    );
+
+    smoothTilt =
+    lerp(
+      smoothTilt,
+      faceTilt,
+      0.15
+    );
+
+    faceTilt =
+    smoothTilt;
 
     const points = [
 
-      [face, "顔", "red"],
+      [face,"顔","red"],
 
-      [rightShoulder, "右肩", "orange"],
-      [rightElbow, "右肘", "orange"],
-      [rightHand, "右手", "orange"],
+      [rightShoulder,"右肩","orange"],
+      [rightElbow,"右肘","orange"],
+      [rightHand,"右手","orange"],
 
-      [leftShoulder, "左肩", "cyan"],
-      [leftElbow, "左肘", "cyan"],
-      [leftHand, "左手", "cyan"],
+      [leftShoulder,"左肩","cyan"],
+      [leftElbow,"左肘","cyan"],
+      [leftHand,"左手","cyan"],
 
-      [heart, "心臓", "pink"],
-      [waist, "腰", "yellow"],
+      [heart,"心臓","pink"],
+      [belly,"へそ","white"],
+      [waist,"腰","yellow"],
 
-      [rightHip, "右足付け根", "lime"],
-      [rightKnee, "右膝", "lime"],
-      [rightAnkle, "右足首", "lime"],
-      [rightFoot, "右足先", "lime"],
+      [rightHip,"右足付け根","lime"],
+      [rightKnee,"右膝","lime"],
+      [rightAnkle,"右足首","lime"],
+      [rightFoot,"右足先","lime"],
 
-      [leftHip, "左足付け根", "magenta"],
-      [leftKnee, "左膝", "magenta"],
-      [leftAnkle, "左足首", "magenta"],
-      [leftFoot, "左足先", "magenta"]
+      [leftHip,"左足付け根","magenta"],
+      [leftKnee,"左膝","magenta"],
+      [leftAnkle,"左足首","magenta"],
+      [leftFoot,"左足先","magenta"]
     ];
 
-    for (const p of points) {
+    for(const p of points){
 
       drawPoint(
         p[0].x,
@@ -341,9 +544,10 @@ function loop() {
 
     let html = "";
 
-    for (const p of points) {
+    for(const p of points){
 
-      html += "<div>"
+      html +=
+      "<div>"
       + p[1]
       + " : "
       + "X="
@@ -360,41 +564,41 @@ function loop() {
     html += "<hr>";
 
     html +=
-      "顔の傾き: "
-      + faceTilt.toFixed(1)
-      + "°<br>";
+    "顔の傾き: "
+    + faceTilt.toFixed(1)
+    + "°<br>";
 
     html +=
-      "体の向き: "
-      + bodyRotation.toFixed(1)
-      + "°<br>";
+    "体の向き: "
+    + bodyRotation.toFixed(1)
+    + "°<br>";
 
-    if (
+    if(
       bodyRotation < 45 ||
       bodyRotation > 315
-    ) {
+    ){
 
       html += "向き: 前";
 
-    } else if (
+    }else if(
 
-      bodyRotation >= 45 &&
-      bodyRotation < 135
+      bodyRotation >=45 &&
+      bodyRotation <135
 
-    ) {
+    ){
 
       html += "向き: 右";
 
-    } else if (
+    }else if(
 
-      bodyRotation >= 135 &&
-      bodyRotation < 225
+      bodyRotation >=135 &&
+      bodyRotation <225
 
-    ) {
+    ){
 
       html += "向き: 後ろ";
 
-    } else {
+    }else{
 
       html += "向き: 左";
     }
@@ -406,15 +610,15 @@ function loop() {
 }
 
 window.addEventListener(
-  "resize",
-  () => {
+"resize",
+()=>{
 
-    canvas.width =
-      window.innerWidth;
+  canvas.width =
+  window.innerWidth;
 
-    canvas.height =
-      window.innerHeight;
-  }
+  canvas.height =
+  window.innerHeight;
+}
 );
 
 </script>
