@@ -52,12 +52,36 @@ canvas{
   overflow-y:auto;
 }
 
+#cameraButton{
+  position:absolute;
+  right:10px;
+  top:10px;
+
+  z-index:10;
+
+  padding:12px 16px;
+
+  border:none;
+  border-radius:12px;
+
+  background:#222;
+  color:white;
+
+  font-size:16px;
+  cursor:pointer;
+}
+
 </style>
 </head>
 <body>
 
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
+
+<button id="cameraButton">
+カメラ切替
+</button>
+
 <div id="info"></div>
 
 <script type="module">
@@ -81,11 +105,77 @@ canvas.getContext("2d");
 const info =
 document.getElementById("info");
 
+const cameraButton =
+document.getElementById("cameraButton");
+
 canvas.width =
 window.innerWidth;
 
 canvas.height =
 window.innerHeight;
+
+/* =========================
+   カメラ設定
+========================= */
+
+let currentFacingMode = "user";
+let currentStream = null;
+
+async function startCamera(){
+
+  if(currentStream){
+
+    currentStream
+    .getTracks()
+    .forEach(track=>track.stop());
+  }
+
+  const stream =
+  await navigator.mediaDevices.getUserMedia({
+
+    video:{
+      facingMode:currentFacingMode
+    }
+
+  });
+
+  currentStream = stream;
+
+  video.srcObject = stream;
+
+  /* インカメだけ左右反転 */
+
+  if(currentFacingMode === "user"){
+
+    video.style.transform =
+    "scaleX(-1)";
+
+  }else{
+
+    video.style.transform =
+    "scaleX(1)";
+  }
+}
+
+cameraButton.onclick = async ()=>{
+
+  if(currentFacingMode === "user"){
+
+    currentFacingMode = "environment";
+
+  }else{
+
+    currentFacingMode = "user";
+  }
+
+  await startCamera();
+};
+
+await startCamera();
+
+/* =========================
+   MediaPipe
+========================= */
 
 const vision =
 await FilesetResolver.forVisionTasks(
@@ -106,13 +196,6 @@ vision,
   numPoses:1
 }
 );
-
-navigator.mediaDevices.getUserMedia({
-  video:true
-})
-.then(stream=>{
-  video.srcObject = stream;
-});
 
 const LANDMARKS = {
 
@@ -337,11 +420,19 @@ function loop(){
 
     function getPoint(index){
 
+      let x = lm[index].x;
+
+      /* アウトカメ時は反転しない */
+
+      if(currentFacingMode === "user"){
+
+        x = 1 - x;
+      }
+
       return{
 
         x:
-        (1-lm[index].x)
-        * canvas.width,
+        x * canvas.width,
 
         y:
         lm[index].y
@@ -442,10 +533,6 @@ function loop(){
       getPoint(LANDMARKS.rightFoot)
     );
 
-    /* =========================
-       追加ポイント
-    ========================= */
-
     const heart =
     getMid(
       leftShoulder,
@@ -465,10 +552,6 @@ function loop(){
       z:(heart.z + waist.z)/2
     };
 
-    /* =========================
-       向き
-    ========================= */
-
     let bodyRotation =
     getBodyRotation(
       leftShoulder,
@@ -484,10 +567,6 @@ function loop(){
 
     bodyRotation =
     smoothRotation;
-
-    /* =========================
-       顔傾き
-    ========================= */
 
     let faceTilt =
     getFaceTilt(
@@ -544,6 +623,15 @@ function loop(){
 
     let html = "";
 
+    html +=
+    "カメラ: "
+    + (
+      currentFacingMode === "user"
+      ? "インカメ"
+      : "アウトカメ"
+    )
+    + "<hr>";
+
     for(const p of points){
 
       html +=
@@ -572,36 +660,6 @@ function loop(){
     "体の向き: "
     + bodyRotation.toFixed(1)
     + "°<br>";
-
-    if(
-      bodyRotation < 45 ||
-      bodyRotation > 315
-    ){
-
-      html += "向き: 前";
-
-    }else if(
-
-      bodyRotation >=45 &&
-      bodyRotation <135
-
-    ){
-
-      html += "向き: 右";
-
-    }else if(
-
-      bodyRotation >=135 &&
-      bodyRotation <225
-
-    ){
-
-      html += "向き: 後ろ";
-
-    }else{
-
-      html += "向き: 左";
-    }
 
     info.innerHTML = html;
   }
