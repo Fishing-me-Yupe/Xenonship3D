@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Full Body + Face + Hands Tracker</title>
+<style>
+:root{color-scheme:dark;--panel:rgba(12,15,21,.88);--line:rgba(255,255,255,.15);--muted:#aeb8c8;--accent:#73d7ff}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f5f7fb}
+#video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;transform:scaleX(-1)}
+#canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+button{border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#232a36;color:#fff;font:inherit;font-size:13px;cursor:pointer}
+button:hover{background:#303b4c}button:disabled{opacity:.55;cursor:wait}
+#cameraButton{position:absolute;right:12px;top:12px;z-index:5;padding:11px 14px;background:rgba(24,29,38,.9)}
+#panel{position:absolute;left:12px;top:12px;bottom:12px;width:min(390px,calc(100vw - 24px));max-height:calc(100vh - 24px);display:flex;flex-direction:column;z-index:4;background:var(--panel);border:1px solid var(--line);border-radius:13px;box-shadow:0 8px 32px #0006;backdrop-filter:blur(9px);overflow:hidden}
+#panelHeader{padding:13px 14px 10px;border-bottom:1px solid var(--line)}
+h1{font-size:16px;margin:0 0 5px;font-weight:750}
+.small{font-size:11px;color:var(--muted);line-height:1.45}
+#controls{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#controls button.active{background:#15526a;border-color:#48bfe8;color:#fff}
+#status{padding:8px 14px;border-bottom:1px solid var(--line);font-size:12px;line-height:1.45;color:#d6e6f4;overflow-wrap:anywhere}
+#stats{padding:10px 14px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{border:1px solid var(--line);background:#ffffff08;border-radius:8px;padding:8px}
+.stat .label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.stat .value{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat .sub{font-size:11px;color:#d6deea;margin-top:3px}
+#coordinateTitle{padding:10px 14px 4px;font-size:12px;font-weight:700}
+#coordinateNote{padding:0 14px 8px;font-size:11px;color:var(--muted);line-height:1.4}
+#coordOutput{margin:0 8px 8px;padding:10px;overflow:auto;white-space:pre;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#06080c;border:1px solid var(--line);border-radius:8px;flex:1;min-height:90px;tab-size:2}
+#footerNote{padding:0 14px 11px;font-size:10px;color:#aab4c3;line-height:1.4}
+@media(max-width:600px){#panel{width:min(350px,calc(100vw - 20px));left:10px;top:10px;bottom:10px;max-height:calc(100vh - 20px)}#cameraButton{right:10px;top:10px;padding:9px 10px;font-size:12px}#panelHeader{padding:10px 11px 8px}#stats{padding:8px 11px}.stat .value{font-size:13px}}
+</style>
+</head>
+<body>
+<video id="video" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
+<button id="cameraButton">カメラ切替</button>
+<section id="panel" aria-label="トラッカー情報">
+  <div id="panelHeader">
+    <h1>全身・顔・両手トラッカー</h1>
+    <div class="small">Pose 33点 + Face姿勢 + 左右の手 各21点<br>下の切替で2D画面座標 / 3Dモデル座標を確認できます。</div>
+    <div id="controls">
+      <button id="mode2d" class="active">2D座標 (画面)</button>
+      <button id="mode3d">3D座標 (モデル)</button>
+      <button id="calibrateButton">正面を基準にする</button>
+      <button id="copyButton">表示中JSONをコピー</button>
+    </div>
+  </div>
+  <div id="status" role="status">カメラの許可待ちです。ブラウザのカメラ使用を許可してください。</div>
+  <div id="stats">
+    <div class="stat"><div class="label">顔の向き (yaw / pitch / roll)</div><div class="value" id="faceAngles">-- / -- / --</div><div class="sub" id="faceState">顔の検出待ち</div></div>
+    <div class="stat"><div class="label">体の向き (yaw / pitch / roll)</div><div class="value" id="bodyAngles">-- / -- / --</div><div class="sub" id="bodyState">体の検出待ち</div></div>
+    <div class="stat"><div class="label">手の検出</div><div class="value" id="handsState">左 -- / 右 --</div><div class="sub">各手 最大21点</div></div>
+    <div class="stat"><div class="label">処理FPS</div><div class="value" id="fpsValue">--</div><div class="sub" id="cameraState">カメラ待機中</div></div>
+  </div>
+  <div id="coordinateTitle">2D座標 (画面ピクセル)</div>
+  <div id="coordinateNote">映像の object-fit: cover と左右反転を考慮した、画面上の位置です。</div>
+  <pre id="coordOutput">座標データ待機中…</pre>
+  <div id="footerNote">3D座標は腰中央を原点にした相対座標です。単位はメートル。実際のモデルに接続する際はモデルの身長・軸に合わせてスケール調整してください。</div>
+</section>
+<script type="module">
+import {
+  FilesetResolver,
+  PoseLandmarker,
+  FaceLandmarker,
+  HandLandmarker
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.mjs";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d", { alpha: true });
+const statusEl = document.getElementById("status");
+const coordOutput = document.getElementById("coordOutput");
+const coordinateTitle = document.getElementById("coordinateTitle");
+const coordinateNote = document.getElementById("coordinateNote");
+const faceAnglesEl = document.getElementById("faceAngles");
+const bodyAnglesEl = document.getElementById("bodyAngles");
+const faceStateEl = document.getElementById("faceState");
+const bodyStateEl = document.getElementById("bodyState");
+const handsStateEl = document.getElementById("handsState");
+const fpsValueEl = document.getElementById("fpsValue");
+const cameraStateEl = document.getElementById("cameraState");
+const cameraButton = document.getElementById("cameraButton");
+const mode2dButton = document.getElementById("mode2d");
+const mode3dButton = document.getElementById("mode3d");
+const calibrateButton = document.getElementById("calibrateButton");
+const copyButton = document.getElementById("copyButton");
+
+let currentFacingMode = "user";
+let currentStream = null;
+let poseLandmarker = null;
+let faceLandmarker = null;
+let handLandmarker = null;
+let activeMode = "2d";
+let lastVideoTime = -1;
+let lastTimestamp = 0;
+let lastPanelUpdate = 0;
+let processedFrames = 0;
+let fpsWindowStart = performance.now();
+let latest2D = null;
+let latest3D = null;
+let latestFaceAngles = null;
+let latestBodyAngles = null;
+let modelReady = false;
+let loopStarted = false;
+
+// The Tasks hand classifier expects a mirrored selfie image. We process the
+// camera frame in its original orientation, so swap its handedness labels.
+// If a particular camera/browser reports labels backwards, change this to false.
+const SWAP_HANDEDNESS_FOR_UNMIRRORED_INPUT = true;
+
+const smoothing = Object.create(null);
+const angleReferences = { face: null, body: null };
+const pendingCalibration = { face: true, body: true };
+const smoothedAngles = { face: null, body: null };
+
+const POSE_POINTS = [
+  { key: "nose", label: "鼻/顔基準", index: 0, color: "#ff5252" },
+  { key: "leftShoulder", label: "左肩", index: 11, color: "#49e6ff" },
+  { key: "rightShoulder", label: "右肩", index: 12, color: "#ffad42" },
+  { key: "leftElbow", label: "左肘", index: 13, color: "#49e6ff" },
+  { key: "rightElbow", label: "右肘", index: 14, color: "#ffad42" },
+  { key: "leftWrist", label: "左手首", index: 15, color: "#49e6ff" },
+  { key: "rightWrist", label: "右手首", index: 16, color: "#ffad42" },
+  { key: "leftHip", label: "左腰/股関節", index: 23, color: "#ff54df" },
+  { key: "rightHip", label: "右腰/股関節", index: 24, color: "#a7ff43" },
+  { key: "leftKnee", label: "左膝", index: 25, color: "#ff54df" },
+  { key: "rightKnee", label: "右膝", index: 26, color: "#a7ff43" },
+  { key: "leftAnkle", label: "左足首", index: 27, color: "#ff54df" },
+  { key: "rightAnkle", label: "右足首", index: 28, color: "#a7ff43" },
+  { key: "leftHeel", label: "左かかと", index: 29, color: "#ff54df" },
+  { key: "rightHeel", label: "右かかと", index: 30, color: "#a7ff43" },
+  { key: "leftFoot", label: "左足先", index: 31, color: "#ff54df" },
+  { key: "rightFoot", label: "右足先", index: 32, color: "#a7ff43" }
+];
+
+const POSE_CONNECTIONS = [
+  [11,12],[11,13],[13,15],[12,14],[14,16],
+  [11,23],[12,24],[23,24],
+  [23,25],[25,27],[27,31],[27,29],[29,31],
+  [24,26],[26,28],[28,32],[28,30],[30,32]
+];
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],[0,17]
+];
+const HAND_NAMES = [
+  "wrist",
+  "thumbCMC","thumbMCP","thumbIP","thumbTip",
+  "indexMCP","indexPIP","indexDIP","indexTip",
+  "middleMCP","middlePIP","middleDIP","middleTip",
+  "ringMCP","ringPIP","ringDIP","ringTip",
+  "pinkyMCP","pinkyPIP","pinkyDIP","pinkyTip"
+];
+
+function setStatus(message, isError = false) {
+  statusEl.textContent = message;
+  statusEl.style.color = isError ? "#ffaaa9" : "#d6e6f4";
+}
+
+function resizeCanvas() {
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.round(window.innerWidth * dpr);
+  canvas.height = Math.round(window.innerHeight * dpr);
+  canvas.style.width = `${window.innerWidth}px`;
+  canvas.style.height = `${window.innerHeight}px`;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+async function startCamera() {
+  cameraButton.disabled = true;
+  setStatus("カメラを起動しています。ブラウザの許可ダイアログが出たら「許可」を選んでください…");
+  try {
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => track.stop());
+      currentStream = null;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: currentFacingMode },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    });
+    currentStream = stream;
+    video.srcObject = stream;
+    video.style.transform = currentFacingMode === "user" ? "scaleX(-1)" : "scaleX(1)";
+    await video.play();
+    lastVideoTime = -1;
+    cameraStateEl.textContent = currentFacingMode === "user" ? "インカメラ" : "アウトカメラ";
+    setStatus("カメラ起動済み。人物が全身入る位置に立ってください。");
+  } catch (error) {
+    const detail = error && error.message ? error.message : String(error);
+    setStatus(`カメラを起動できませんでした: ${detail}。HTTPSまたはlocalhostで開き、カメラ使用を許可してください。`, true);
+    cameraStateEl.textContent = "カメラエラー";
+    throw error;
+  } finally {
+    cameraButton.disabled = false;
+  }
+}
+
+cameraButton.addEventListener("click", async () => {
+  currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+  await startCamera();
+});
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function deg(rad) { return rad * 180 / Math.PI; }
+function wrapDeg(value) { return ((value + 180) % 360 + 360) % 360 - 180; }
+function angleDiff(a, b) { return wrapDeg(a - b); }
+function lerpAngle(a, b, t) { return wrapDeg(a + angleDiff(b, a) * t); }
+function smoothVector(key, value, alpha = 0.34) {
+  if (!value || !Number.isFinite(value.x) || !Number.isFinite(value.y) || !Number.isFinite(value.z)) return null;
+  const prev = smoothing[key];
+  if (!prev) {
+    smoothing[key] = { x: value.x, y: value.y, z: value.z };
+  } else {
+    prev.x = lerp(prev.x, value.x, alpha);
+    prev.y = lerp(prev.y, value.y, alpha);
+    prev.z = lerp(prev.z, value.z, alpha);
+  }
+  return { x: smoothing[key].x, y: smoothing[key].y, z: smoothing[key].z };
+}
+function midpoint(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+}
+function sub3(a, b) { return { x: a.x-b.x, y: a.y-b.y, z: a.z-b.z }; }
+function add3(a, b) { return { x: a.x+b.x, y: a.y+b.y, z: a.z+b.z }; }
+function mul3(a, k) { return { x: a.x*k, y: a.y*k, z: a.z*k }; }
+function length3(a) { return Math.hypot(a.x, a.y, a.z) || 1; }
+function normalize3(a) { const len = length3(a); return { x:a.x/len, y:a.y/len, z:a.z/len }; }
+function average3(a,b) { return midpoint(a,b); }
+
+// Match the overlay to the video element's object-fit: cover crop and mirror.
+function toScreenPoint(normalized) {
+  const vw = video.videoWidth || 1;
+  const vh = video.videoHeight || 1;
+  const cw = window.innerWidth;
+  const ch = window.innerHeight;
+  const scale = Math.max(cw / vw, ch / vh);
+  const shownW = vw * scale;
+  const shownH = vh * scale;
+  const offsetX = (cw - shownW) / 2;
+  const offsetY = (ch - shownH) / 2;
+  const visualX = currentFacingMode === "user" ? 1 - normalized.x : normalized.x;
+  return {
+    x: offsetX + visualX * shownW,
+    y: offsetY + normalized.y * shownH,
+    z: normalized.z ?? 0
+  };
+}
+
+function drawPoint(point, color, radius = 5) {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(0,0,0,.8)";
+  ctx.stroke();
+}
+function drawLine(a, b, color, width = 3) {
+  if (!a || !b) return;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = "round"; ctx.stroke();
+}
+function drawIndex(point, label, color) {
+  if (!point) return;
+  drawPoint(point, color, 3.1);
+  ctx.font = "10px ui-monospace,monospace";
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = "rgba(0,0,0,.88)";
+  ctx.lineWidth = 2.5;
+  ctx.strokeText(String(label), point.x + 4, point.y - 4);
+  ctx.fillText(String(label), point.x + 4, point.y - 4);
+}
+
+function readPoseScreenPoints(landmarks) {
+  const points = {};
+  for (const spec of POSE_POINTS) {
+    const lm = landmarks[spec.index];
+    if (!lm) continue;
+    points[spec.key] = smoothVector(`screen:${spec.key}`, toScreenPoint(lm));
+  }
+  if (points.leftShoulder && points.rightShoulder && points.leftHip && points.rightHip) {
+    points.heart = smoothVector("screen:heart", midpoint(points.leftShoulder, points.rightShoulder));
+    points.waist = smoothVector("screen:waist", midpoint(points.leftHip, points.rightHip));
+    points.belly = smoothVector("screen:belly", midpoint(points.heart, points.waist));
+  }
+  return points;
+}
+
+function readPoseRawWorld(worldLandmarks) {
+  const points = {};
+  for (const spec of POSE_POINTS) {
+    const lm = worldLandmarks[spec.index];
+    if (!lm) continue;
+    points[spec.key] = { x: lm.x, y: lm.y, z: lm.z };
+  }
+  if (points.leftShoulder && points.rightShoulder && points.leftHip && points.rightHip) {
+    points.heart = midpoint(points.leftShoulder, points.rightShoulder);
+    points.waist = midpoint(points.leftHip, points.rightHip);
+    points.belly = midpoint(points.heart, points.waist);
+  }
+  return points;
+}
+
+function getHipOrigin(worldLandmarks) {
+  return midpoint(worldLandmarks[23], worldLandmarks[24]);
+}
+function toModelAxis(point, origin) {
+  const relative = sub3(point, origin);
+  // Convert to a common avatar convention: Y up and +Z toward the camera.
+  return { x: relative.x, y: -relative.y, z: -relative.z };
+}
+function readPoseModelPoints(rawPoints, origin) {
+  const points = {};
+  for (const [key, value] of Object.entries(rawPoints)) {
+    const converted = toModelAxis(value, origin);
+    points[key] = smoothVector(`model:${key}`, converted, 0.28);
+  }
+  return points;
+}
+
+function eulerFromFaceMatrix(matrixItem) {
+  if (!matrixItem) return null;
+  const e = matrixItem.data || matrixItem;
+  if (!e || e.length < 16) return null;
+  // FaceLandmarker matrix data is compatible with column-major 4x4 matrix arrays.
+  // Extract XYZ Euler angles with clamping to guard floating-point overshoot.
+  const m11 = e[0], m12 = e[4], m13 = e[8];
+  const m22 = e[5], m23 = e[9], m32 = e[6], m33 = e[10];
+  const pitchY = Math.asin(clamp(m13, -1, 1));
+  let pitchX, rollZ;
+  if (Math.abs(m13) < 0.9999999) {
+    pitchX = Math.atan2(-m23, m33);
+    rollZ = Math.atan2(-m12, m11);
+  } else {
+    pitchX = Math.atan2(m32, m22);
+    rollZ = 0;
+  }
+  return { yaw: deg(pitchY), pitch: deg(pitchX), roll: deg(rollZ) };
+}
+
+function eulerFromBodyWorld(world) {
+  if (!world || world.length < 25) return null;
+  const ls = world[11], rs = world[12], lh = world[23], rh = world[24];
+  if (![ls, rs, lh, rh].every(p => p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z))) return null;
+  const shoulderAxis = sub3(rs, ls);
+  const hipAxis = sub3(rh, lh);
+  const lateral = normalize3(add3(shoulderAxis, hipAxis));
+  const shoulderMid = midpoint(ls, rs);
+  const hipMid = midpoint(lh, rh);
+  const up = normalize3(sub3(shoulderMid, hipMid));
+  // Raw pose-world coordinates are used here; calibration removes the person's neutral offset.
+  const yaw = deg(Math.atan2(-lateral.z, lateral.x));
+  const pitch = deg(Math.atan2(up.z, Math.abs(up.y)));
+  const roll = deg(Math.atan2(lateral.y, Math.hypot(lateral.x, lateral.z)));
+  return { yaw, pitch, roll };
+}
+
+function relativeAngles(raw, kind) {
+  if (!raw) return null;
+  if (pendingCalibration[kind] || !angleReferences[kind]) {
+    angleReferences[kind] = { yaw: raw.yaw, pitch: raw.pitch, roll: raw.roll };
+    pendingCalibration[kind] = false;
+    smoothedAngles[kind] = { yaw: 0, pitch: 0, roll: 0 };
+    return { yaw: 0, pitch: 0, roll: 0 };
+  }
+  const ref = angleReferences[kind];
+  const relative = {
+    yaw: angleDiff(raw.yaw, ref.yaw),
+    pitch: angleDiff(raw.pitch, ref.pitch),
+    roll: angleDiff(raw.roll, ref.roll)
+  };
+  const previous = smoothedAngles[kind];
+  if (!previous) smoothedAngles[kind] = { ...relative };
+  else {
+    previous.yaw = lerpAngle(previous.yaw, relative.yaw, 0.22);
+    previous.pitch = lerpAngle(previous.pitch, relative.pitch, 0.22);
+    previous.roll = lerpAngle(previous.roll, relative.roll, 0.22);
+  }
+  return { ...smoothedAngles[kind] };
+}
+
+function handCategory(result, index) {
+  const categories = result.handednesses || result.handedness || [];
+  let name = categories[index] && categories[index][0] ? categories[index][0].categoryName : "Unknown";
+  const score = categories[index] && categories[index][0] ? categories[index][0].score : 0;
+  if (SWAP_HANDEDNESS_FOR_UNMIRRORED_INPUT) {
+    if (name === "Left") name = "Right";
+    else if (name === "Right") name = "Left";
+  }
+  return { name, score };
+}
+
+function collectHands(handResults, poseWorld, hipOrigin) {
+  const bySide = { left: null, right: null };
+  const imageLandmarks = handResults.landmarks || [];
+  const worldLandmarks = handResults.worldLandmarks || [];
+  for (let i = 0; i < imageLandmarks.length; i++) {
+    const classification = handCategory(handResults, i);
+    const side = classification.name === "Left" ? "left" : classification.name === "Right" ? "right" : null;
+    if (!side) continue;
+    if (bySide[side] && bySide[side].score >= classification.score) continue;
+    const screenPoints = imageLandmarks[i].map((lm, pointIndex) =>
+      smoothVector(`screen:hand:${side}:${pointIndex}`, toScreenPoint(lm), 0.42)
+    );
+    let modelPoints = null;
+    const handWorld = worldLandmarks[i];
+    if (handWorld && handWorld.length === 21 && poseWorld) {
+      const wristPoseIndex = side === "left" ? 15 : 16;
+      const bodyWrist = poseWorld[wristPoseIndex];
+      const handWrist = handWorld[0];
+      if (bodyWrist && handWrist) {
+        modelPoints = handWorld.map((p, pointIndex) => {
+          const aligned = add3(bodyWrist, sub3(p, handWrist));
+          const converted = toModelAxis(aligned, hipOrigin);
+          return smoothVector(`model:hand:${side}:${pointIndex}`, converted, 0.34);
+        });
+      }
+    }
+    bySide[side] = { score: classification.score, screenPoints, modelPoints };
+  }
+  return bySide;
+}
+
+function to2DOutput(screenPoints, hands, faceAngles, bodyAngles) {
+  const pose = {};
+  for (const [key, point] of Object.entries(screenPoints || {})) {
+    if (point) pose[key] = { x: round(point.x, 1), y: round(point.y, 1) };
+  }
+  const handOut = {};
+  for (const side of ["left", "right"]) {
+    const hand = hands[side];
+    handOut[`${side}Hand`] = hand ? hand.screenPoints.map((p, i) => ({
+      id: i, name: HAND_NAMES[i], x: round(p.x, 1), y: round(p.y, 1)
+    })) : null;
+  }
+  return {
+    coordinateVersion: "2D",
+    units: "screen pixels (CSS px)",
+    camera: currentFacingMode,
+    orientationDeg: { face: roundAngles(faceAngles), body: roundAngles(bodyAngles) },
+    pose,
+    hands: handOut
+  };
+}
+
+function to3DOutput(modelPoints, hands, faceAngles, bodyAngles) {
+  const pose = {};
+  for (const [key, point] of Object.entries(modelPoints || {})) {
+    if (point) pose[key] = { x: round(point.x, 5), y: round(point.y, 5), z: round(point.z, 5) };
+  }
+  const handOut = {};
+  for (const side of ["left", "right"]) {
+    const hand = hands[side];
+    handOut[`${side}Hand`] = hand && hand.modelPoints ? hand.modelPoints.map((p, i) => ({
+      id: i, name: HAND_NAMES[i], x: round(p.x, 5), y: round(p.y, 5), z: round(p.z, 5)
+    })) : null;
+  }
+  return {
+    coordinateVersion: "3D",
+    units: "meters",
+    origin: "midpoint between left and right hips; reset every frame",
+    axes: { x: "avatar right/left axis from MediaPipe pose world", y: "up", z: "toward camera" },
+    orientationDeg: { face: roundAngles(faceAngles), body: roundAngles(bodyAngles) },
+    pose,
+    hands: handOut
+  };
+}
+function round(value, digits) {
+  if (!Number.isFinite(value)) return null;
+  const scale = 10 ** digits;
+  return Math.round(value * scale) / scale;
+}
+function roundAngles(angles) {
+  if (!angles) return null;
+  return { yaw: round(angles.yaw, 1), pitch: round(angles.pitch, 1), roll: round(angles.roll, 1) };
+}
+
+function drawPose(landmarks, screenPoints) {
+  for (const [a, b] of POSE_CONNECTIONS) {
+    const pa = landmarks[a] ? screenPoints[POSE_POINTS.find(p => p.index === a)?.key] : null;
+    const pb = landmarks[b] ? screenPoints[POSE_POINTS.find(p => p.index === b)?.key] : null;
+    const visibilityA = landmarks[a]?.visibility ?? 1;
+    const visibilityB = landmarks[b]?.visibility ?? 1;
+    if (visibilityA > 0.35 && visibilityB > 0.35) {
+      const color = (a === 11 || a === 13 || a === 15 || b === 11 || b === 13 || b === 15) ? "#49e6ff" :
+                    (a === 12 || a === 14 || a === 16 || b === 12 || b === 14 || b === 16) ? "#ffad42" : "rgba(255,255,255,.8)";
+      drawLine(pa, pb, color, 2.5);
+    }
+  }
+  for (const spec of POSE_POINTS) {
+    const lm = landmarks[spec.index];
+    if (lm && (lm.visibility ?? 1) > 0.35) drawPoint(screenPoints[spec.key], spec.color, spec.key === "nose" ? 5.5 : 4.4);
+  }
+  for (const key of ["heart", "belly", "waist"]) {
+    if (screenPoints[key]) drawPoint(screenPoints[key], key === "heart" ? "#ff66b8" : key === "belly" ? "#fff" : "#ffe94a", 4.5);
+  }
+}
+function drawHands(hands) {
+  for (const side of ["left", "right"]) {
+    const hand = hands[side];
+    if (!hand) continue;
+    const color = side === "left" ? "#50e7ff" : "#ffb04b";
+    for (const [a, b] of HAND_CONNECTIONS) drawLine(hand.screenPoints[a], hand.screenPoints[b], color, 1.8);
+    for (let i = 0; i < hand.screenPoints.length; i++) drawIndex(hand.screenPoints[i], i, color);
+  }
+}
+
+function updatePanel(now) {
+  if (now - lastPanelUpdate < 180) return;
+  lastPanelUpdate = now;
+  if (latestFaceAngles) {
+    faceAnglesEl.textContent = `${latestFaceAngles.yaw.toFixed(1)}° / ${latestFaceAngles.pitch.toFixed(1)}° / ${latestFaceAngles.roll.toFixed(1)}°`;
+    faceStateEl.textContent = "FaceLandmarker 姿勢行列";
+  } else {
+    faceAnglesEl.textContent = "-- / -- / --";
+    faceStateEl.textContent = "顔の検出待ち";
+  }
+  if (latestBodyAngles) {
+    bodyAnglesEl.textContent = `${latestBodyAngles.yaw.toFixed(1)}° / ${latestBodyAngles.pitch.toFixed(1)}° / ${latestBodyAngles.roll.toFixed(1)}°`;
+    bodyStateEl.textContent = "肩・腰の3Dランドマーク";
+  } else {
+    bodyAnglesEl.textContent = "-- / -- / --";
+    bodyStateEl.textContent = "体の検出待ち";
+  }
+  const hasLeft = latest2D?.hands?.leftHand !== null && latest2D?.hands?.leftHand !== undefined;
+  const hasRight = latest2D?.hands?.rightHand !== null && latest2D?.hands?.rightHand !== undefined;
+  handsStateEl.textContent = `左 ${hasLeft ? "21点" : "未検出"} / 右 ${hasRight ? "21点" : "未検出"}`;
+  if (activeMode === "2d" && latest2D) coordOutput.textContent = JSON.stringify(latest2D, null, 2);
+  if (activeMode === "3d" && latest3D) coordOutput.textContent = JSON.stringify(latest3D, null, 2);
+}
+
+function renderLoop() {
+  requestAnimationFrame(renderLoop);
+  if (!modelReady || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) return;
+  if (video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+  const timestamp = Math.max(lastTimestamp + 1, Math.round(performance.now()));
+  lastTimestamp = timestamp;
+  const now = performance.now();
+
+  try {
+    const poseResults = poseLandmarker.detectForVideo(video, timestamp);
+    const faceResults = faceLandmarker.detectForVideo(video, timestamp);
+    const handResults = handLandmarker.detectForVideo(video, timestamp);
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+    const landmarks = poseResults.landmarks && poseResults.landmarks[0];
+    const poseWorld = poseResults.worldLandmarks && poseResults.worldLandmarks[0];
+    let screenPoints = {};
+    let modelPoints = {};
+    let hipOrigin = { x: 0, y: 0, z: 0 };
+    let rawBodyAngles = null;
+    if (landmarks && poseWorld) {
+      screenPoints = readPoseScreenPoints(landmarks);
+      const rawWorldPoints = readPoseRawWorld(poseWorld);
+      hipOrigin = getHipOrigin(poseWorld);
+      modelPoints = readPoseModelPoints(rawWorldPoints, hipOrigin);
+      rawBodyAngles = eulerFromBodyWorld(poseWorld);
+      drawPose(landmarks, screenPoints);
+    }
+
+    const matrixArray = faceResults.facialTransformationMatrixes || faceResults.facialTransformationMatrices || [];
+    const rawFaceAngles = matrixArray.length ? eulerFromFaceMatrix(matrixArray[0]) : null;
+    latestFaceAngles = relativeAngles(rawFaceAngles, "face");
+    latestBodyAngles = relativeAngles(rawBodyAngles, "body");
+
+    const hands = collectHands(handResults, poseWorld, hipOrigin);
+    drawHands(hands);
+
+    latest2D = to2DOutput(screenPoints, hands, latestFaceAngles, latestBodyAngles);
+    latest3D = to3DOutput(modelPoints, hands, latestFaceAngles, latestBodyAngles);
+
+    processedFrames++;
+    if (now - fpsWindowStart >= 1000) {
+      fpsValueEl.textContent = `${(processedFrames * 1000 / (now - fpsWindowStart)).toFixed(1)}`;
+      processedFrames = 0;
+      fpsWindowStart = now;
+    }
+    if (!landmarks) {
+      setStatus("姿勢を検出できません。全身が画面内に入るようにし、明るい場所で試してください。");
+    } else if (!rawFaceAngles) {
+      setStatus("体を検出中です。顔が小さい/横を向きすぎている場合、顔の向きは検出待ちになります。");
+    } else {
+      setStatus("検出中。顔・体の角度は最初の姿勢を0°とした相対値です。");
+    }
+    updatePanel(now);
+  } catch (error) {
+    const detail = error && error.message ? error.message : String(error);
+    setStatus(`検出処理でエラー: ${detail}`, true);
+    console.error(error);
+  }
+}
+
+function setMode(mode) {
+  activeMode = mode;
+  mode2dButton.classList.toggle("active", mode === "2d");
+  mode3dButton.classList.toggle("active", mode === "3d");
+  if (mode === "2d") {
+    coordinateTitle.textContent = "2D座標 (画面ピクセル)";
+    coordinateNote.textContent = "映像の object-fit: cover と左右反転を考慮した、画面上の位置です。x・y はCSSピクセル。";
+    if (latest2D) coordOutput.textContent = JSON.stringify(latest2D, null, 2);
+  } else {
+    coordinateTitle.textContent = "3D座標 (モデル用・相対メートル)";
+    coordinateNote.textContent = "腰中央を原点にし、Yを上、+Zをカメラ方向に統一。手の21点は手首を体の手首位置に合わせています。";
+    if (latest3D) coordOutput.textContent = JSON.stringify(latest3D, null, 2);
+  }
+}
+mode2dButton.addEventListener("click", () => setMode("2d"));
+mode3dButton.addEventListener("click", () => setMode("3d"));
+
+calibrateButton.addEventListener("click", () => {
+  angleReferences.face = null;
+  angleReferences.body = null;
+  pendingCalibration.face = true;
+  pendingCalibration.body = true;
+  smoothedAngles.face = null;
+  smoothedAngles.body = null;
+  setStatus("基準をリセットしました。正面を向いて数フレーム静止してください。");
+});
+
+copyButton.addEventListener("click", async () => {
+  const data = activeMode === "2d" ? latest2D : latest3D;
+  if (!data) { setStatus("まだ座標データがありません。検出開始後にコピーしてください。", true); return; }
+  const text = JSON.stringify(data, null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus(`${activeMode.toUpperCase()} JSONをクリップボードにコピーしました。`);
+  } catch (error) {
+    // Fallback for environments where Clipboard API is unavailable.
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const succeeded = document.execCommand("copy");
+    textarea.remove();
+    setStatus(succeeded ? `${activeMode.toUpperCase()} JSONをコピーしました。` : "コピーできませんでした。座標欄を選択して手動コピーしてください。", !succeeded);
+  }
+});
+
+async function initialize() {
+  try {
+    // Start the camera first. Do not download tracking models until camera access succeeds.
+    await startCamera();
+  } catch (cameraError) {
+    const name = cameraError && cameraError.name ? cameraError.name : "CameraError";
+    let hint = "ブラウザのサイト設定でカメラを許可し、HTTPSまたはlocalhostで開いてください。";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") hint = "カメラの許可が拒否されています。Safari/ブラウザのサイト設定でカメラを許可してから再読み込みしてください。";
+    else if (name === "NotFoundError" || name === "DevicesNotFoundError") hint = "利用できるカメラが見つかりません。カメラを接続してから再読み込みしてください。";
+    else if (name === "NotReadableError" || name === "TrackStartError") hint = "カメラが他のアプリで使用中か、OS側で使用できません。他のアプリを閉じて再試行してください。";
+    else if (name === "SecurityError") hint = "この開き方ではカメラを使えません。HTTPSまたはlocalhostで開いてください。";
+    setStatus(`カメラを開始できないため、検出モデルの読み込みを停止しました (${name})。${hint}`, true);
+    return;
+  }
+  try {
+    setStatus("姿勢・顔・手の検出モデルを読み込んでいます（3Dアバターモデルは読み込みません）…");
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+    );
+    const [pose, face, hands] = await Promise.all([
+      PoseLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
+        },
+        runningMode: "VIDEO",
+        numPoses: 1,
+        minPoseDetectionConfidence: 0.5,
+        minPosePresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      }),
+      FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+        },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        outputFaceBlendshapes: false,
+        outputFacialTransformationMatrixes: true,
+        minFaceDetectionConfidence: 0.5,
+        minFacePresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      }),
+      HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+        },
+        runningMode: "VIDEO",
+        numHands: 2,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      })
+    ]);
+    poseLandmarker = pose;
+    faceLandmarker = face;
+    handLandmarker = hands;
+    modelReady = true;
+    setStatus("準備完了。全身と手を映すと検出が始まります。");
+    if (!loopStarted) {
+      loopStarted = true;
+      requestAnimationFrame(renderLoop);
+    }
+  } catch (error) {
+    const detail = error && error.message ? error.message : String(error);
+    setStatus(`MediaPipeモデルを読み込めませんでした: ${detail}。ネット接続とCDN/モデルURLへのアクセスを確認してください。`, true);
+    console.error(error);
+  }
+}
+
+setMode("2d");
+initialize();
+</script>
+</body>
+</html>
